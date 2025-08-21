@@ -36,7 +36,8 @@ fn print_entry(visited: &mut HashSet<PathBuf>, path: PathBuf) -> Result<(), std:
 
     if meta.is_file() {
         let contents = fs::read_to_string(&path)?;
-        print!("file: {:?}\n{contents}\n", path);
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        print!("### {path:?}\n```{ext}\n{contents}\n```\n");
         return Ok(());
     }
 
