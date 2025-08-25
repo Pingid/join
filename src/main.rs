@@ -1,4 +1,10 @@
-use std::{collections::HashSet, env, fs, path::PathBuf, process};
+use std::{
+    collections::HashSet,
+    env, fs,
+    io::{self, BufRead, IsTerminal},
+    path::PathBuf,
+    process,
+};
 
 fn usage(p: &str) -> String {
     format!(
@@ -7,16 +13,39 @@ fn usage(p: &str) -> String {
 }
 
 fn main() {
-    let mut a = env::args();
-    if a.len() == 1 {
-        println!("{}", usage(&a.next().unwrap()));
+    // Collect args (excluding program name)
+    let mut args = env::args();
+    let prog = args.next().unwrap_or_else(|| "join".into());
+    let mut inputs: Vec<String> = args.collect();
+
+    // If stdin is piped, read additional inputs (newline-separated paths)
+    if !io::stdin().is_terminal() {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            match line {
+                Ok(s) => {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        inputs.push(s.to_string());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("join: Error reading stdin: {e}");
+                    process::exit(1);
+                }
+            }
+        }
+    }
+
+    // If no inputs from args or stdin, show usage
+    if inputs.is_empty() {
+        println!("{}", usage(&prog));
         process::exit(1);
     }
-    a.next();
 
     let mut visited = HashSet::new();
 
-    for path in a {
+    for path in inputs {
         match print_entry(&mut visited, path.clone().into()) {
             Ok(_) => (),
             Err(e) => {
