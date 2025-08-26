@@ -1,6 +1,8 @@
 [package]
 name = "join"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
+pico-args = "0.5"
+globset = "0.4.16"

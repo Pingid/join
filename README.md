@@ -1,6 +1,6 @@
 ## join
 
-Concatenate files to stdout.
+Concatenate files to markdown.
 
 ### Install
 
@@ -11,16 +11,24 @@ cargo install --git https://github.com/Pingid/join
 ### Usage
 
 ```bash
-join <FILE> [FILE...]
+join [--exclude|-e <GLOB>] [--no-default-excludes|-E] [--version|-V] <FILE> [FILE...]
 
 # or pipe a list of paths (one per line)
-printf "a.txt\nb.md\n" | join
+printf "src/main.rs\nREADME.md\n" | join
 ```
 
 ### Example
 
 ```bash
-join a.txt b.md
+join ./src/*.rs > lib.md
+
+# exclude paths matching a glob (repeatable)
+join --exclude 'target/*' .
+join -e '*.log' -e 'node_modules/*' .
+
+# disable built-in defaults and include everything unless excluded explicitly
+join --no-default-excludes .
+join -E .
 ```
 
 - **no args**: prints usage
@@ -30,3 +38,10 @@ join a.txt b.md
 
 - Accepts file and folder paths. Folder paths are traversed recursively.
 - When stdin is not a TTY (piped), newline-separated paths from stdin are included alongside any CLI args.
+- Supports `--exclude <GLOB>` to skip printing or traversing paths that match the glob. Patterns support `*`, `?`, `[...]`, `**` and match against the full path.
+- Default excludes (can be disabled with `--no-default-excludes` or `-E`):
+  - Dotfiles and dot-directories (e.g., `.git/`, `.env`, `.vscode/`, etc.)
+  - Dirs: `target/`, `node_modules/`, `dist/`, `build/`, `out/`, `coverage/`, `vendor/`, `__pycache__/`
+  - Lockfiles: `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `Pipfile.lock`, `poetry.lock`, `Gemfile.lock`, `composer.lock`, `go.sum`, `npm-shrinkwrap.json`
+  - Files: `*.pyc`, `*.pyo`, `*.pyd`, `*.log`, `Thumbs.db`, `Desktop.ini`
+  - Add more via repeated `--exclude`/`-e`.
