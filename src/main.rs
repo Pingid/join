@@ -1,3 +1,5 @@
+mod rust;
+
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use pico_args::Arguments;
 use std::{
@@ -10,19 +12,21 @@ use std::{
 
 fn usage(p: &str) -> String {
     format!(
-        r#"Usage: {p} [--exclude|-e <GLOB>] [--no-default-excludes|-E] <FILE> [FILE...]
+        r#"Usage: {p} [--exclude|-e <GLOB>] [--no-default-excludes|-E] [--strip-rust-tests] <FILE> [FILE...]
 
 Concatenate files to markdown.
 
 Options:
   --exclude, -e <GLOB>        Exclude paths matching the glob (repeatable).
   --no-default-excludes, -E   Disable built-in default excludes.
+  --strip-rust-tests          Strip test modules and test functions from .rs files.
   --version, -V               Print version and exit.
 
 Examples:
   {p} a.txt b.md
   {p} -e 'target/*' -e '*.{{json,md}}' .
   {p} -E .
+  {p} --strip-rust-tests src/
   {p} printf "a.txt\nb.md\n" | join
   "#
     )
@@ -84,6 +88,9 @@ fn main() {
     // Optional flag to disable built-in default excludes
     let no_default_excludes = pargs.contains("--no-default-excludes") || pargs.contains("-E");
     let defaults_enabled = !no_default_excludes;
+
+    // Optional flag to strip Rust tests
+    let strip_rust_tests = pargs.contains("--strip-rust-tests");
 
     // Support repeatable --exclude and -e
     let mut exclude = GlobSetBuilder::new();
@@ -178,6 +185,7 @@ fn main() {
             path.clone().into(),
             &excludes,
             defaults_enabled,
+            strip_rust_tests,
         ) {
             Ok(_) => (),
             Err(e) => {
@@ -193,6 +201,7 @@ fn print_entry(
     path: PathBuf,
     excludes: &GlobSet,
     defaults_enabled: bool,
+    strip_rust_tests: bool,
 ) -> Result<(), std::io::Error> {
     if is_excluded(&path, excludes, defaults_enabled) {
         return Ok(());
@@ -212,7 +221,12 @@ fn print_entry(
             }
             Ok(contents) => {
                 let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                print!("### {path:?}\n```{ext}\n{contents}\n```\n");
+                let processed_contents = if strip_rust_tests && ext == "rs" {
+                    rust::strip_tests(&contents)
+                } else {
+                    contents
+                };
+                print!("### {path:?}\n```{ext}\n{processed_contents}\n```\n");
                 return Ok(());
             }
         };
@@ -222,7 +236,7 @@ fn print_entry(
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        print_entry(visited, path, excludes, defaults_enabled)?;
+        print_entry(visited, path, excludes, defaults_enabled, strip_rust_tests)?;
     }
     Ok(())
 }
