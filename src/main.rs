@@ -233,9 +233,25 @@ fn print_entry(
     }
 
     let entries = fs::read_dir(&path)?;
+    let mut files = Vec::new();
+    let mut dirs = Vec::new();
+
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
+        let meta = fs::metadata(&path)?;
+        if meta.is_file() {
+            files.push(path);
+        } else if meta.is_dir() {
+            dirs.push(path);
+        }
+    }
+
+    // Process files first, then directories
+    for path in files {
+        print_entry(visited, path, excludes, defaults_enabled, strip_rust_tests)?;
+    }
+    for path in dirs {
         print_entry(visited, path, excludes, defaults_enabled, strip_rust_tests)?;
     }
     Ok(())
