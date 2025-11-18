@@ -1,12 +1,6 @@
 use syn::visit_mut::{self, VisitMut};
 
-#[allow(dead_code)]
-pub static OPTION_DOC: (&str, &str) = (
-    "--strip-rust-tests",
-    "Strip test modules and test functions from .rs files.",
-);
-
-pub fn strip_tests(contents: &str) -> String {
+pub fn strip(contents: &str) -> String {
     // Try to parse as a Rust file
     let Ok(mut syntax_tree) = syn::parse_file(contents) else {
         // If parsing fails, return original content
@@ -71,7 +65,13 @@ fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
 fn has_test_cfg(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
         // Check for #[cfg(test)]
-        if attr.path().segments.last().map(|seg| seg.ident == "cfg").unwrap_or(false) {
+        if attr
+            .path()
+            .segments
+            .last()
+            .map(|seg| seg.ident == "cfg")
+            .unwrap_or(false)
+        {
             if let syn::Meta::List(meta_list) = &attr.meta {
                 return meta_list.tokens.to_string().contains("test");
             }

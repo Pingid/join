@@ -4,7 +4,9 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-pico-args = "0.5"
-globset = "0.4.16"
-syn = { version = "2", features = ["full", "visit-mut"] }
+globset = "0.4.18"
+clap = "4.5.52"
+
+# Rust
+syn = { version = "2.0.110", features = ["full", "visit-mut"] }
 prettyplease = "0.2"
