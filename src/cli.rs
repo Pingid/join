@@ -108,12 +108,11 @@ fn handle_path(context: &mut LangContext) -> Result<(), std::io::Error> {
             Ok(contents) => {
                 let spec = specs()
                     .into_iter()
-                    .find_map(|spec| match spec.matches.spec_matches(context) {
-                        true => Some(spec.format),
-                        false => None,
-                    })
+                    .find(|spec| spec.matches.spec_matches(context))
                     .unwrap_or_default();
-                print!("{}", spec.format_contents(&context, contents));
+                let processed = spec.processor.process_contents(&context, contents);
+                let formatted = spec.format.format_contents(&context, processed);
+                print!("{}", formatted);
                 return Ok(());
             }
         };

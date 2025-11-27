@@ -9,7 +9,7 @@ mod default;
 mod rust;
 
 pub fn specs() -> Vec<LangSpec> {
-    vec![default::spec(), rust::spec()]
+    vec![rust::spec(), default::spec()]
 }
 
 #[derive(Debug, Default, Clone)]
