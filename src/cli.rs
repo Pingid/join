@@ -46,7 +46,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
-
     let excludes = exclude.build().unwrap();
     let defaults_enabled = !matches.get_flag("no-default-excludes");
     for path in inputs {
@@ -209,7 +208,6 @@ mod tests {
     use globset::GlobSetBuilder;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[cfg(unix)]
     fn unique_tmp_dir(name: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -261,5 +259,47 @@ mod tests {
             loop_ctx.visit(),
             "symlink paths should not be deduped when not following"
         );
+    }
+
+    #[test]
+    fn explicit_hidden_input_is_not_excluded() {
+        let root = unique_tmp_dir("explicit-hidden-input");
+        fs::create_dir_all(&root).unwrap();
+
+        let hidden = root.join(".hidden");
+        fs::create_dir_all(&hidden).unwrap();
+        fs::write(hidden.join("file.txt"), "ok").unwrap();
+
+        let matches = build_cli()
+            .try_get_matches_from(["join", hidden.to_str().unwrap()])
+            .unwrap();
+        let excludes = GlobSetBuilder::new().build().unwrap();
+
+        let ctx = LangContext::new(&matches, &hidden, &excludes, true);
+        assert!(!ctx.excluded(), "explicit input should not be excluded");
+
+        let child = hidden.join("file.txt");
+        let child_ctx = ctx.child(&child);
+        assert!(!child_ctx.excluded(), "explicit input subtree should not be excluded");
+    }
+
+    #[test]
+    fn hidden_paths_are_excluded_when_not_explicitly_passed() {
+        let root = unique_tmp_dir("implicit-hidden-path");
+        fs::create_dir_all(&root).unwrap();
+
+        let hidden = root.join(".hidden");
+        fs::create_dir_all(&hidden).unwrap();
+
+        let matches = build_cli()
+            .try_get_matches_from(["join", root.to_str().unwrap()])
+            .unwrap();
+        let excludes = GlobSetBuilder::new().build().unwrap();
+
+        let ctx = LangContext::new(&matches, &root, &excludes, true);
+        assert!(!ctx.excluded());
+
+        let hidden_ctx = ctx.child(&hidden);
+        assert!(hidden_ctx.excluded(), "hidden paths should be excluded by default");
     }
 }

@@ -125,6 +125,9 @@ pub struct LangContext<'a> {
     pub excludes: &'a GlobSet,
     pub visited: HashSet<PathBuf>,
     pub defaults_enabled: bool,
+    /// Indicates path was explicitly provided by the user.
+    /// When true, exclude rules are not applied for this path.
+    pub provided: bool,
 }
 
 impl<'a> LangContext<'a> {
@@ -134,12 +137,14 @@ impl<'a> LangContext<'a> {
         excludes: &'a GlobSet,
         defaults_enabled: bool,
     ) -> Self {
+        let provided = excludes.is_match(path) || (defaults_enabled && has_dot_component(path));
         Self {
             args,
             path,
             visited: HashSet::new(),
             excludes,
             defaults_enabled,
+            provided,
         }
     }
 
@@ -150,6 +155,7 @@ impl<'a> LangContext<'a> {
             visited: self.visited.clone(),
             excludes: self.excludes,
             defaults_enabled: self.defaults_enabled,
+            provided: self.provided,
         }
     }
 
@@ -158,6 +164,9 @@ impl<'a> LangContext<'a> {
     }
 
     pub fn excluded(&self) -> bool {
+        if self.provided {
+            return false;
+        }
         if self.excludes.is_match(self.path) {
             return true;
         }
@@ -168,22 +177,32 @@ impl<'a> LangContext<'a> {
     }
 
     fn visit_key(&self) -> PathBuf {
+        if self.args.get_flag("no-follow-symlinks") {
+            return self.path.to_path_buf();
+        }
+
+        // When following symlinks, de-dupe by canonical path to avoid infinite recursion from
+        // symlinked directory loops (e.g. dir contains `loop -> dir`).
         fs::canonicalize(self.path).unwrap_or_else(|_| self.path.to_path_buf())
     }
 
     fn has_dot_component(&self) -> bool {
-        use std::ffi::OsStr;
-        for comp in self.path.components() {
-            if let std::path::Component::Normal(os) = comp {
-                if let Some(s) = os.to_str() {
-                    if s.starts_with('.') {
-                        return true;
-                    }
-                } else if os == OsStr::new(".") {
+        has_dot_component(self.path)
+    }
+}
+
+fn has_dot_component(path: &Path) -> bool {
+    use std::ffi::OsStr;
+    for comp in path.components() {
+        if let std::path::Component::Normal(os) = comp {
+            if let Some(s) = os.to_str() {
+                if s.starts_with('.') {
                     return true;
                 }
+            } else if os == OsStr::new(".") {
+                return true;
             }
         }
-        false
     }
+    false
 }
