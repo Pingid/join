@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -153,7 +154,7 @@ impl<'a> LangContext<'a> {
     }
 
     pub fn visit(&mut self) -> bool {
-        self.visited.insert(self.path.to_path_buf())
+        self.visited.insert(self.visit_key())
     }
 
     pub fn excluded(&self) -> bool {
@@ -164,6 +165,10 @@ impl<'a> LangContext<'a> {
             return true;
         }
         false
+    }
+
+    fn visit_key(&self) -> PathBuf {
+        fs::canonicalize(self.path).unwrap_or_else(|_| self.path.to_path_buf())
     }
 
     fn has_dot_component(&self) -> bool {

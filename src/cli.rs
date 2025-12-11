@@ -9,36 +9,7 @@ use std::{
 use crate::lang::{LangContext, specs};
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::new("join")
-        .about("Concatenate files to markdown")
-        .version(env!("CARGO_PKG_VERSION"))
-        .arg(
-            Arg::new("exclude")
-                .short('e')
-                .long("exclude")
-                .value_name("GLOB")
-                .help("Exclude paths matching the glob (repeatable)")
-                .action(ArgAction::Append),
-        )
-        .arg(
-            Arg::new("no-default-excludes")
-                .short('E')
-                .long("no-default-excludes")
-                .help("Disable built-in default excludes")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("inputs")
-                .value_name("FILE")
-                .help("Input files or directories")
-                .num_args(0..),
-        );
-
-    for spec in specs() {
-        for arg in &spec.args {
-            cmd = cmd.arg(arg.clone());
-        }
-    }
+    let mut cmd = build_cli();
 
     let matches = cmd.clone().get_matches();
 
@@ -92,10 +63,60 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn build_cli() -> Command {
+    let mut cmd = Command::new("join")
+        .about("Concatenate files to markdown")
+        .version(env!("CARGO_PKG_VERSION"))
+        .arg(
+            Arg::new("exclude")
+                .short('e')
+                .long("exclude")
+                .value_name("GLOB")
+                .help("Exclude paths matching the glob (repeatable)")
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("no-default-excludes")
+                .short('E')
+                .long("no-default-excludes")
+                .help("Disable built-in default excludes")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-follow-symlinks")
+                .long("no-follow-symlinks")
+                .help("Do not follow symlinks (skip symlinked files and directories)")
+                .action(ArgAction::SetTrue)
+                .global(true),
+        )
+        .arg(
+            Arg::new("inputs")
+                .value_name("FILE")
+                .help("Input files or directories")
+                .num_args(0..),
+        );
+
+    for spec in specs() {
+        for arg in &spec.args {
+            cmd = cmd.arg(arg.clone());
+        }
+    }
+
+    cmd
+}
+
 fn handle_path(context: &mut LangContext) -> Result<(), std::io::Error> {
     if context.excluded() || !context.visit() {
         return Ok(());
     }
+
+    if context.args.get_flag("no-follow-symlinks") {
+        let meta = fs::symlink_metadata(context.path)?;
+        if meta.file_type().is_symlink() {
+            return Ok(());
+        }
+    }
+
     let meta = fs::metadata(context.path)?;
 
     if meta.is_file() {
@@ -125,14 +146,24 @@ fn handle_path(context: &mut LangContext) -> Result<(), std::io::Error> {
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
-        let meta = fs::metadata(&path)?;
-        if context.excluded() {
-            continue;
-        }
-        if meta.is_file() {
-            files.push(path);
-        } else if meta.is_dir() {
-            dirs.push(path);
+
+        if context.args.get_flag("no-follow-symlinks") {
+            let meta = fs::symlink_metadata(&path)?;
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_file() {
+                files.push(path);
+            } else if meta.is_dir() {
+                dirs.push(path);
+            }
+        } else {
+            let meta = fs::metadata(&path)?;
+            if meta.is_file() {
+                files.push(path);
+            } else if meta.is_dir() {
+                dirs.push(path);
+            }
         }
     }
 
@@ -170,4 +201,65 @@ fn collect_inputs(matches: &clap::ArgMatches) -> Result<Vec<PathBuf>, Box<dyn st
     }
 
     Ok(inputs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use globset::GlobSetBuilder;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    fn unique_tmp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("join-test-{name}-{nanos}"))
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn visit_dedupes_symlink_loops_by_default() {
+        use std::os::unix::fs::symlink;
+
+        let root = unique_tmp_dir("symlink-loop-default");
+        fs::create_dir_all(&root).unwrap();
+        symlink(&root, root.join("loop")).unwrap();
+
+        let matches = build_cli()
+            .try_get_matches_from(["join", root.to_str().unwrap()])
+            .unwrap();
+        let excludes = GlobSetBuilder::new().build().unwrap();
+        let mut ctx = LangContext::new(&matches, &root, &excludes, true);
+        assert!(ctx.visit());
+
+        let loop_path = root.join("loop");
+        let mut loop_ctx = ctx.child(&loop_path);
+        assert!(!loop_ctx.visit(), "symlinked loop should be deduped");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn visit_does_not_dedupe_symlink_paths_when_no_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = unique_tmp_dir("symlink-loop-no-follow");
+        fs::create_dir_all(&root).unwrap();
+        symlink(&root, root.join("loop")).unwrap();
+
+        let matches = build_cli()
+            .try_get_matches_from(["join", "--no-follow-symlinks", root.to_str().unwrap()])
+            .unwrap();
+        let excludes = GlobSetBuilder::new().build().unwrap();
+        let mut ctx = LangContext::new(&matches, &root, &excludes, true);
+        assert!(ctx.visit());
+
+        let loop_path = root.join("loop");
+        let mut loop_ctx = ctx.child(&loop_path);
+        assert!(
+            loop_ctx.visit(),
+            "symlink paths should not be deduped when not following"
+        );
+    }
 }
